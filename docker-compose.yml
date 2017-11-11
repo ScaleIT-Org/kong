@@ -1,0 +1,76 @@
+version: '2.1'
+
+services:
+  kong-database:
+    image: postgres:9.4-alpine
+    environment:
+      - POSTGRES_USER=kong
+      - POSTGRES_DB=kong
+      - POSTGRES_PASSWORD=kong
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kong:
+    image: kong
+    depends_on:
+      kong-database:
+        condition: service_healthy
+    restart: always
+    environment:
+      - KONG_DATABASE=postgres
+      - KONG_PG_HOST=kong-database
+      - KONG_PG_DATABASE=kong
+      - KONG_PG_PASSWORD=kong
+      - KONG_PROXY_ACCESS_LOG=/dev/stdout
+      - KONG_ADMIN_ACCESS_LOG=/dev/stdout
+      - KONG_PROXY_ERROR_LOG=/dev/stderr
+      - KONG_ADMIN_ERROR_LOG=/dev/stderr
+    ports:
+      - 8000:8000
+      - 8001:8001
+      - 8443:8443
+      - 8444:8444
+    links:
+      - kong-database:kong-database
+    networks:
+      - internal
+      - nginx-proxy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -I -s -L http://127.0.0.1:8000 || exit 1"]
+      interval: 5s
+      retries: 10
+
+  gui:
+    image: pantsel/konga
+    depends_on:
+      kong:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+    ports:
+      - 1337:1337
+    links:
+      - kong:kong
+    networks:
+      - internal
+      - nginx-proxy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -I -s -L http://127.0.0.1:1337 || exit 1"]
+      interval: 5s
+      retries: 10
+
+
+volumes:
+  db-data:
+
+networks:
+  internal:
+  nginx-proxy:
+    external: true
